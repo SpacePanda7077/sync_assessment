@@ -5,21 +5,19 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
     server: {
         proxy: {
-            // Proxy HTTP requests (login, etc.)
+            // Proxy for development only
             "/api": {
                 target: "http://92.205.187.214:8080",
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/api/, ""),
             },
 
-            // Proxy WebSocket
             "/ws": {
-                target: "ws://92.205.187.214:8080", // Note: use ws:// here
-                ws: true, // ← Very important
+                target: "ws://92.205.187.214:8080",
+                ws: true,
                 changeOrigin: true,
                 rewrite: (path) => path.replace(/^\/ws/, ""),
             },
         },
     },
 });
-
