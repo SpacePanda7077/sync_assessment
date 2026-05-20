@@ -33,7 +33,6 @@ function App() {
         if (user) {
             console.log("User data received:", user);
             setUser({ id: user.id, username: user.username });
-
             connect(`ws://92.205.187.214:8080/ws?playerId=${user.id}`);
         }
     }, [user]);
