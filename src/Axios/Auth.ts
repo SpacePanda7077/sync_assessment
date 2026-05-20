@@ -2,10 +2,10 @@ import axios from "axios";
 
 const HttP_URL = import.meta.env.VITE_HTTP_URL;
 
-const getUser = async (username: string) => {
+const getUser = async () => {
     try {
         const response = await axios.post(`/api/login`, {
-            username: username,
+            username: "test1",
         });
 
         return response.data;

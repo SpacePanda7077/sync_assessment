@@ -20,13 +20,14 @@ function App() {
     const setUser = useAuthStore((state) => state.setUserData);
     const [username, setUsername] = useState("");
 
-    const { getUserData, user } = useAuth();
+    const { getUserData, user, error } = useAuth();
     const getUserInfo = useCallback(() => {
         if (!username) {
             alert("Please enter a username");
             return;
         }
-        getUserData(username);
+        getUserData();
+        console.log("skjj");
     }, [username]);
 
     useEffect(() => {
@@ -35,7 +36,11 @@ function App() {
             setUser({ id: user.id, username: user.username });
             connect(`ws://92.205.187.214:8080/ws?playerId=${user.id}`);
         }
-    }, [user]);
+        if (error) {
+            console.error("Error fetching user data:", error);
+            alert("Failed to fetch user data. Please try again.");
+        }
+    }, [user, error]);
 
     useEffect(() => {
         if (currentScene && socket) {

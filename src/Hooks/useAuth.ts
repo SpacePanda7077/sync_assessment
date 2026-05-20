@@ -7,8 +7,8 @@ export const useAuth = () => {
         error,
         mutate: getUserData,
     } = useMutation({
-        mutationKey: ["getUser"],
-        mutationFn: (username: string) => getUser(username),
+        mutationKey: ["getUser"], // Add a random value to ensure the mutation runs every time
+        mutationFn: () => getUser(),
     });
 
     return { user, error, getUserData };
