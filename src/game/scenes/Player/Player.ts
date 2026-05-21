@@ -4,9 +4,13 @@ export class Player {
     rect: GameObjects.Rectangle;
     speed = 220;
     direction = new PhaserMath.Vector2(0, 0);
-    targetPosition = new PhaserMath.Vector2(0, 0);
+    predictedPosition: PhaserMath.Vector2;
+    serverPosition: PhaserMath.Vector2;
+
     constructor(scene: Scene, x: number, y: number) {
         this.createBody(scene, x, y);
+        this.predictedPosition = new PhaserMath.Vector2(x, y);
+        this.serverPosition = new PhaserMath.Vector2(x, y);
     }
     createBody(scene: Scene, x: number, y: number) {
         this.rect = scene.add.rectangle(x, y, 50, 50, 0x0000ff);

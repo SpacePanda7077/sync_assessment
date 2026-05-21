@@ -7,7 +7,7 @@ type AuthState = {
 
 // Zustand store for managing user authentication data
 export const useAuthStore = create<AuthState>()((set) => ({
-    user: { id: "generated-player-id", username: "player_name" }, // Initial user data
+    user: { id: "", username: "" }, // Initial user data
     setUserData: (userData: { id: string; username: string }) =>
         set({ user: userData }),
 }));

@@ -15,6 +15,9 @@ export class Game extends Scene {
     elapsedTime = 0;
     networkBreathingSpace = 10;
     desyncThreshold = 50 + this.networkBreathingSpace; // pixels
+    snapshotQueue: SocketRecievedData[] = [];
+    lastAckedSeq = -1;
+    serverViewer: GameObjects.Rectangle;
 
     constructor() {
         super("Game");
@@ -37,8 +40,8 @@ export class Game extends Scene {
         this.cameras.main.setZoom(0.4);
         this.input_handler = new InputHandler(this, this.socket);
         // a debug rectangle to visualize the server position of the player, this will help us see the error between client and server positions
-        const serverViewer = this.add
-            .rectangle(0, 0, 50, 50, 0xff0000)
+        this.serverViewer = this.add
+            .rectangle(0, 0, 70, 70, 0xff0000)
             //set the visible to true to visualize the server position
             .setVisible(false);
 
@@ -52,99 +55,7 @@ export class Game extends Scene {
 
             this.socket.onmessage = (event) => {
                 const data: SocketRecievedData = JSON.parse(event.data);
-
-                for (const player of data.players) {
-                    if (!this.frontendPlayers.has(player.id)) {
-                        // If we don't have this player in our frontend map, it means it's a new player that joined the game, so we create a new Player object for them
-
-                        const playerObj = new Player(this, player.x, player.y);
-                        this.frontendPlayers.set(player.id, playerObj);
-
-                        // If this player is the local player, we set up the camera to follow them and store a reference to their Player object for input handling
-
-                        if (player.id === data.playerId) {
-                            this.cameras.main.startFollow(playerObj.rect);
-                            playerObj.rect.setFillStyle(0x00ff00);
-                            this.localPlayer = playerObj;
-                            serverViewer.setPosition(player.x, player.y);
-                        }
-                    } else {
-                        // If we already have this player in our frontend map, it means it's an existing player that has updated their position, so we update their Player object with the new position data from the server
-
-                        const playerObj = this.frontendPlayers.get(player.id);
-                        if (!playerObj) continue;
-                        if (player.id === data.playerId) {
-                            const serverPosition = { x: player.x, y: player.y };
-
-                            // splice the input buffer to remove acknowledged inputs
-                            this.spliceInputBuffer(data.lastProcessedInputSeq);
-
-                            // Reset to authoritative server position
-                            playerObj.targetPosition.set(
-                                serverPosition.x,
-                                serverPosition.y,
-                            );
-
-                            // Replay unacknowledged inputs
-                            for (const input of this.input_handler
-                                .inputBuffer) {
-                                const direction =
-                                    this.input_handler.replayInputs(input.data);
-                                this.input_handler.update(
-                                    direction,
-                                    playerObj.targetPosition,
-                                    input.delta,
-                                );
-                            }
-                            serverViewer.setPosition(
-                                serverPosition.x,
-                                serverPosition.y,
-                            );
-
-                            // Calculate the error between the client's current position and the server's authoritative position
-                            const error = this.getError(
-                                {
-                                    x: playerObj.rect.x,
-                                    y: playerObj.rect.y,
-                                },
-                                serverPosition,
-                            );
-                            // If the error exceeds our desync threshold, we snap the player back to the server's authoritative position to prevent them from getting too far out of sync this helps with inconsistent packet loss or latency spikes,
-                            if (error > this.desyncThreshold) {
-                                console.log(
-                                    `Position error: ${error.toFixed(2)} pixels`,
-                                );
-                                playerObj.setPosition(
-                                    serverPosition.x,
-                                    serverPosition.y,
-                                );
-                            }
-                        } else {
-                            // For other players, we can use linear interpolation to smoothly move them to their new positions
-                            const linearInterpolationFactor = 0.2;
-                            const localPosition = {
-                                x: playerObj.rect.x,
-                                y: playerObj.rect.y,
-                            };
-                            const interPolatedPosition = {
-                                x: PhaserMath.Linear(
-                                    localPosition.x,
-                                    player.x,
-                                    linearInterpolationFactor,
-                                ),
-                                y: PhaserMath.Linear(
-                                    localPosition.y,
-                                    player.y,
-                                    linearInterpolationFactor,
-                                ),
-                            };
-                            playerObj.setPosition(
-                                interPolatedPosition.x,
-                                interPolatedPosition.y,
-                            );
-                        }
-                    }
-                }
+                this.snapshotQueue.push(data);
             };
         };
 
@@ -152,44 +63,39 @@ export class Game extends Scene {
     }
 
     update(time: number, delta: number): void {
-        // In a more Real Scenero we would use a fixed update for great determinism between client and server, but for simplicity we will just send input on key events
-        // handling input and sending it to the server would be done here,
         this.elapsedTime += delta;
         while (this.elapsedTime >= this.tickRate) {
             this.elapsedTime -= this.tickRate;
             this.fixedUpdate();
         }
-    }
+        for (const player of this.frontendPlayers.values()) {
+            const visual = player.rect;
+            const target = player.predictedPosition;
 
-    fixedUpdate() {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            if (this.localPlayer) {
-                this.input_handler.sendInput(this.localPlayer, this.tickRate);
-                this.localPlayer.update(this.tickRate);
-                const interPolatedPosition = {
-                    x: PhaserMath.Linear(
-                        this.localPlayer.rect.x,
-                        this.localPlayer.targetPosition.x,
-                        0.2,
-                    ),
-                    y: PhaserMath.Linear(
-                        this.localPlayer.rect.y,
-                        this.localPlayer.targetPosition.y,
-                        0.4,
-                    ),
-                };
-                this.localPlayer.setPosition(
-                    interPolatedPosition.x,
-                    interPolatedPosition.y,
-                );
+            let factor: number;
+
+            if (player === this.localPlayer) {
+                factor = 0.035;
+                continue; // Much more responsive
+                // Alternative (very popular): factor = 0.35; // constant
+            } else {
+                factor = 0.08; // remote players
+                visual.x = PhaserMath.Linear(visual.x, target.x, factor);
+                visual.y = PhaserMath.Linear(visual.y, target.y, factor);
             }
         }
     }
 
-    spliceInputBuffer(seq: number) {
-        this.input_handler.inputBuffer = this.input_handler.inputBuffer.filter(
-            (input) => input.data.seq > seq,
-        );
+    fixedUpdate() {
+        // Consume snapshot first — this is what creates localPlayer
+        while (this.snapshotQueue.length > 0) {
+            this.applySnapshot(this.snapshotQueue.shift()!);
+        }
+
+        if (!this.localPlayer) return; // now safe to guard the rest
+
+        this.input_handler.sendInput(this.localPlayer, this.tickRate);
+        this.localPlayer.update(this.tickRate);
     }
 
     getError(
@@ -199,5 +105,91 @@ export class Game extends Scene {
         const errorX = serverPosition.x - localPosition.x;
         const errorY = serverPosition.y - localPosition.y;
         return Math.sqrt(errorX * errorX + errorY * errorY);
+    }
+    applySnapshot(data: SocketRecievedData) {
+        for (const player of data.players) {
+            if (!this.frontendPlayers.has(player.id)) {
+                // If we don't have this player in our frontend map, it means it's a new player that joined the game, so we create a new Player object for them
+
+                const playerObj = new Player(this, player.x, player.y);
+                this.frontendPlayers.set(player.id, playerObj);
+
+                // If this player is the local player, we set up the camera to follow them and store a reference to their Player object for input handling
+
+                if (player.id === data.playerId) {
+                    this.cameras.main.startFollow(playerObj.rect);
+                    playerObj.rect.setFillStyle(0x00ff00);
+                    this.localPlayer = playerObj;
+                    // serverViewer.setPosition(player.x, player.y);
+                }
+            } else {
+                // If we already have this player in our frontend map, it means it's an existing player that has updated their position, so we update their Player object with the new position data from the server
+
+                const playerObj = this.frontendPlayers.get(player.id);
+                if (!playerObj) continue;
+                if (player.id === data.playerId) {
+                    const serverPos = new PhaserMath.Vector2(
+                        player.x,
+                        player.y,
+                    );
+                    // Find the index of the last acknowledged input in the input buffer
+                    const acknowledgedIndex =
+                        this.input_handler.inputBuffer.findIndex(
+                            (input) =>
+                                input.data.seq === data.lastProcessedInputSeq,
+                        );
+
+                    if (acknowledgedIndex !== -1) {
+                        if (data.lastProcessedInputSeq === this.lastAckedSeq) {
+                            console.log(
+                                "Duplicate snapshot received, ignoring.",
+                            );
+                            continue;
+                        }
+                        // Remove acknowledged inputs
+                        this.input_handler.inputBuffer.splice(
+                            0,
+                            acknowledgedIndex + 1,
+                        );
+                        this.lastAckedSeq = data.lastProcessedInputSeq;
+
+                        // Replay remaining inputs
+                        this.input_handler.inputBuffer.forEach((input) => {
+                            const direction = this.input_handler.replayInputs(
+                                input.data,
+                            );
+                            this.input_handler.update(
+                                direction,
+                                serverPos,
+                                input.delta,
+                            );
+                        });
+
+                        this.serverViewer.setPosition(serverPos.x, serverPos.y);
+                        const currentPos = {
+                            x: this.localPlayer.rect.x,
+                            y: this.localPlayer.rect.y,
+                        };
+
+                        // Calculate the error between the client's predicted position and the server's authoritative position
+                        const error = this.getError(currentPos, serverPos);
+                        console.log("Error : ", error);
+                        // If the error exceeds the desync threshold, we correct the client's position to match the server's position
+                        if (error > this.desyncThreshold) {
+                            console.log(
+                                "Desync detected! Correcting position.",
+                            );
+                            this.localPlayer.setPosition(
+                                serverPos.x,
+                                serverPos.y,
+                            );
+                        }
+                    }
+                } else {
+                    // Remote players
+                    playerObj.predictedPosition.set(player.x, player.y); // or better: predictedPosition
+                }
+            }
+        }
     }
 }
