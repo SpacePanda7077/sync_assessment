@@ -13,7 +13,7 @@ export class Game extends Scene {
     tickRate = 1000 / 20;
     pastTime = 0;
     elapsedTime = 0;
-    networkBreathingSpace = 10;
+    networkBreathingSpace = 20;
     desyncThreshold = 50 + this.networkBreathingSpace; // pixels
     snapshotQueue: SocketRecievedData[] = [];
     lastAckedSeq = -1;
