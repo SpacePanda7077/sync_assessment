@@ -4,8 +4,7 @@ const HttP_URL = import.meta.env.VITE_HTTP_URL;
 
 const getUser = async () => {
     try {
-        const baseURL = HttP_URL || "/api"; // fallback to proxy in dev
-        const response = await axios.post(`${baseURL}/login`, {
+        const response = await axios.post(`/api/login`, {
             username: "test1",
         });
 
